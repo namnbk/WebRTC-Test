@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC Frame Receiver</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 1.5rem;
+    }
+    fieldset {
+      margin-bottom: 1rem;
+    }
+    canvas {
+      border: 1px solid #444;
+    }
+    #log {
+      width: 100%;
+      height: 10rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>WebRTC Frame Receiver</h1>
+    <fieldset>
+      <legend>Session</legend>
+      <label>
+        Room name
+        <input id="roomInput" type="text" value="lab-room-1" autocomplete="off">
+      </label>
+      <button id="connectBtn">Join signaling room</button>
+      <span>Status: <strong id="status">disconnected</strong></span>
+    </fieldset>
+
+    <fieldset>
+      <legend>Incoming stream</legend>
+      <canvas id="frameCanvas" width="512" height="512"></canvas>
+    </fieldset>
+
+    <fieldset>
+      <legend>Receiver metrics</legend>
+      <div>Frames received: <span id="framesReceived">0</span></div>
+      <div>Effective FPS: <span id="fps">0</span></div>
+      <div>Throughput: <span id="throughput">0</span> Mbps</div>
+      <div>End-to-end latency: <span id="latency">0</span> ms</div>
+      <div>Frame loss: <span id="frameLoss">0</span></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Logs</legend>
+      <textarea id="log" readonly></textarea>
+    </fieldset>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="js/receiver.js"></script>
+</body>
+</html>
