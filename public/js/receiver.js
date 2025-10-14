@@ -1,18 +1,18 @@
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 const FRAME_WIDTH = 512;
 const FRAME_HEIGHT = 512;
 
-const roomInput = document.querySelector('#roomInput');
-const statusEl = document.querySelector('#status');
-const connectBtn = document.querySelector('#connectBtn');
-const framesReceivedEl = document.querySelector('#framesReceived');
-const fpsEl = document.querySelector('#fps');
-const throughputEl = document.querySelector('#throughput');
-const latencyEl = document.querySelector('#latency');
-const frameLossEl = document.querySelector('#frameLoss');
-const logEl = document.querySelector('#log');
-const canvas = document.querySelector('#frameCanvas');
-const ctx = canvas.getContext('2d');
+const roomInput = document.querySelector("#roomInput");
+const statusEl = document.querySelector("#status");
+const connectBtn = document.querySelector("#connectBtn");
+const framesReceivedEl = document.querySelector("#framesReceived");
+const fpsEl = document.querySelector("#fps");
+const throughputEl = document.querySelector("#throughput");
+const latencyEl = document.querySelector("#latency");
+const frameLossEl = document.querySelector("#frameLoss");
+const logEl = document.querySelector("#log");
+const canvas = document.querySelector("#frameCanvas");
+const ctx = canvas.getContext("2d");
 const imageData = ctx.createImageData(FRAME_WIDTH, FRAME_HEIGHT);
 
 class FrameAssembler {
@@ -44,7 +44,7 @@ class FrameAssembler {
       this.frames.set(frameId, {
         chunks: new Map(),
         receivedChunks: 0,
-        receivedBytes: 0
+        receivedBytes: 0,
       });
     }
     return this.frames.get(frameId);
@@ -59,7 +59,9 @@ class FrameAssembler {
       return;
     }
     const combined = new Uint8Array(frame.byteLength);
-    const sortedChunks = Array.from(frame.chunks.entries()).sort((a, b) => a[0] - b[0]);
+    const sortedChunks = Array.from(frame.chunks.entries()).sort(
+      (a, b) => a[0] - b[0]
+    );
     let offset = 0;
     for (const [, chunk] of sortedChunks) {
       const view = new Uint8Array(chunk);
@@ -70,7 +72,7 @@ class FrameAssembler {
     this.onComplete({
       frameId,
       buffer: combined.buffer,
-      timestamp: frame.timestamp
+      timestamp: frame.timestamp,
     });
   }
 
@@ -79,7 +81,7 @@ class FrameAssembler {
   }
 }
 
-const socket = io({ transports: ['websocket'] });
+const socket = io({ transports: ["websocket"] });
 
 let peerConnection = null;
 let dataChannel = null;
@@ -92,79 +94,81 @@ const metrics = {
   frameTimes: [],
   lastFrameId: null,
   frameLoss: 0,
-  latency: 0
+  latency: 0,
 };
 
 const assembler = new FrameAssembler(handleCompleteFrame);
 
-connectBtn.addEventListener('click', () => {
+connectBtn.addEventListener("click", () => {
   if (!socket.connected) {
-    appendLog('Socket disconnected. Attempting reconnect.');
+    appendLog("Socket disconnected. Attempting reconnect.");
     socket.connect();
   }
 
   const room = roomInput.value.trim();
   if (!room) {
-    appendLog('Room name is required.');
+    appendLog("Room name is required.");
     return;
   }
 
-  socket.emit('createOrJoin', room);
+  socket.emit("createOrJoin", room);
   connectBtn.disabled = true;
-  updateStatus('joining');
+  updateStatus("joining");
 });
 
-socket.on('connect', () => {
-  appendLog('Connected to signaling server.');
+socket.on("connect", () => {
+  appendLog("Connected to signaling server.");
 });
 
-socket.on('disconnect', (reason) => {
+socket.on("disconnect", (reason) => {
   appendLog(`Socket disconnected: ${reason}`);
   teardownPeerConnection();
   connectBtn.disabled = false;
-  updateStatus('disconnected');
+  updateStatus("disconnected");
 });
 
-socket.on('created', (room, clientId) => {
+socket.on("created", (room, clientId) => {
   appendLog(`Created room ${room} as initiator (${clientId}).`);
   isInitiator = true;
   ensurePeerConnection();
 });
 
-socket.on('joined', (room, clientId) => {
+socket.on("joined", (room, clientId) => {
   appendLog(`Joined room ${room} (${clientId}). Waiting for offer.`);
   isInitiator = false;
   ensurePeerConnection();
 });
 
-socket.on('ready', () => {
-  appendLog('Peer ready, starting negotiation.');
+socket.on("ready", () => {
+  appendLog("Peer ready, starting negotiation.");
   if (isInitiator) {
     void createOffer();
   }
 });
 
-socket.on('full', (room) => {
+socket.on("full", (room) => {
   appendLog(`Room ${room} is full. Choose another room.`);
-  updateStatus('full');
+  updateStatus("full");
   connectBtn.disabled = false;
 });
 
-socket.on('error', (message) => {
+socket.on("error", (message) => {
   appendLog(`Server error: ${message}`);
   connectBtn.disabled = false;
 });
 
-socket.on('peerDisconnected', () => {
-  appendLog('Peer disconnected.');
+socket.on("peerDisconnected", () => {
+  appendLog("Peer disconnected.");
   teardownPeerConnection();
   connectBtn.disabled = false;
-  updateStatus('peer-disconnected');
+  updateStatus("peer-disconnected");
 });
 
-socket.on('signal', async (payload) => {
+socket.on("signal", async (payload) => {
   if (!peerConnection) {
-    appendLog('Received signal before RTCPeerConnection existed. Creating now.');
+    appendLog(
+      "Received signal before RTCPeerConnection existed. Creating now."
+    );
     ensurePeerConnection();
   }
 
@@ -172,10 +176,10 @@ socket.on('signal', async (payload) => {
     const description = payload.description;
     appendLog(`Received remote description (${description.type}).`);
     await peerConnection.setRemoteDescription(description);
-    if (description.type === 'offer') {
+    if (description.type === "offer") {
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
-      socket.emit('signal', { description: peerConnection.localDescription });
+      socket.emit("signal", { description: peerConnection.localDescription });
     }
   } else if (payload.candidate) {
     try {
@@ -195,23 +199,27 @@ function ensurePeerConnection() {
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      socket.emit('signal', { candidate: event.candidate });
+      socket.emit("signal", { candidate: event.candidate });
     }
   };
 
   peerConnection.onconnectionstatechange = () => {
     appendLog(`Connection state: ${peerConnection.connectionState}`);
-    if (peerConnection.connectionState === 'connected') {
-      updateStatus('connected');
+    if (peerConnection.connectionState === "connected") {
+      updateStatus("connected");
     }
-    if (['disconnected', 'failed', 'closed'].includes(peerConnection.connectionState)) {
+    if (
+      ["disconnected", "failed", "closed"].includes(
+        peerConnection.connectionState
+      )
+    ) {
       updateStatus(peerConnection.connectionState);
     }
   };
 
   if (isInitiator) {
-    dataChannel = peerConnection.createDataChannel('frame-channel', {
-      ordered: true
+    dataChannel = peerConnection.createDataChannel("frame-channel", {
+      ordered: true,
     });
     configureDataChannel(dataChannel);
   } else {
@@ -223,16 +231,16 @@ function ensurePeerConnection() {
 }
 
 function configureDataChannel(channel) {
-  channel.binaryType = 'arraybuffer';
+  channel.binaryType = "arraybuffer";
 
   channel.onopen = () => {
-    appendLog('DataChannel open.');
-    updateStatus('channel-open');
+    appendLog("DataChannel open.");
+    updateStatus("channel-open");
   };
 
   channel.onclose = () => {
-    appendLog('DataChannel closed.');
-    updateStatus('channel-closed');
+    appendLog("DataChannel closed.");
+    updateStatus("channel-closed");
   };
 
   channel.onerror = (event) => {
@@ -242,10 +250,10 @@ function configureDataChannel(channel) {
   channel.onmessage = async (event) => {
     let payload = event.data;
 
-    if (typeof payload === 'string') {
+    if (typeof payload === "string") {
       try {
         const message = JSON.parse(payload);
-        if (message.type === 'frame-metadata') {
+        if (message.type === "frame-metadata") {
           assembler.registerMetadata(message);
         }
       } catch (err) {
@@ -274,7 +282,7 @@ async function createOffer() {
   }
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
-  socket.emit('signal', { description: peerConnection.localDescription });
+  socket.emit("signal", { description: peerConnection.localDescription });
 }
 
 function teardownPeerConnection() {
@@ -304,7 +312,7 @@ function handleCompleteFrame(frame) {
   }
 
   if (metrics.lastFrameId !== null && frame.frameId > metrics.lastFrameId + 1) {
-    metrics.frameLoss += (frame.frameId - metrics.lastFrameId - 1);
+    metrics.frameLoss += frame.frameId - metrics.lastFrameId - 1;
   }
   metrics.lastFrameId = frame.frameId;
 
@@ -335,8 +343,11 @@ function drawFrame(buffer) {
 function updateMetrics() {
   framesReceivedEl.textContent = metrics.frames.toString();
 
-  const elapsedSeconds = metrics.startTime ? (performance.now() - metrics.startTime) / 1000 : 0;
-  const throughput = elapsedSeconds > 0 ? (metrics.bytes * 8) / (elapsedSeconds * 1_000_000) : 0;
+  const elapsedSeconds = metrics.startTime
+    ? (performance.now() - metrics.startTime) / 1000
+    : 0;
+  const throughput =
+    elapsedSeconds > 0 ? (metrics.bytes * 8) / (elapsedSeconds * 1_000_000) : 0;
   throughputEl.textContent = throughput.toFixed(2);
 
   const times = metrics.frameTimes;
@@ -345,7 +356,7 @@ function updateMetrics() {
     const fps = span > 0 ? (times.length - 1) / span : 0;
     fpsEl.textContent = fps.toFixed(1);
   } else {
-    fpsEl.textContent = '0';
+    fpsEl.textContent = "0";
   }
 
   latencyEl.textContent = metrics.latency.toFixed(1);

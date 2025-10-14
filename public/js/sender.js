@@ -1,22 +1,22 @@
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 const FRAME_WIDTH = 512;
 const FRAME_HEIGHT = 512;
 const BYTES_PER_PIXEL = 2;
 
-const logEl = document.querySelector('#log');
-const roomInput = document.querySelector('#roomInput');
-const statusEl = document.querySelector('#status');
-const connectBtn = document.querySelector('#connectBtn');
-const startBtn = document.querySelector('#startBtn');
-const stopBtn = document.querySelector('#stopBtn');
-const fpsInput = document.querySelector('#fpsInput');
-const chunkInput = document.querySelector('#chunkInput');
-const framesSentEl = document.querySelector('#framesSent');
-const throughputEl = document.querySelector('#throughput');
-const sendLatencyEl = document.querySelector('#sendLatency');
-const bufferedAmountEl = document.querySelector('#bufferedAmount');
+const logEl = document.querySelector("#log");
+const roomInput = document.querySelector("#roomInput");
+const statusEl = document.querySelector("#status");
+const connectBtn = document.querySelector("#connectBtn");
+const startBtn = document.querySelector("#startBtn");
+const stopBtn = document.querySelector("#stopBtn");
+const fpsInput = document.querySelector("#fpsInput");
+const chunkInput = document.querySelector("#chunkInput");
+const framesSentEl = document.querySelector("#framesSent");
+const throughputEl = document.querySelector("#throughput");
+const sendLatencyEl = document.querySelector("#sendLatency");
+const bufferedAmountEl = document.querySelector("#bufferedAmount");
 
-const socket = io({ transports: ['websocket'] });
+const socket = io({ transports: ["websocket"] });
 
 let peerConnection = null;
 let dataChannel = null;
@@ -31,27 +31,27 @@ const metrics = {
   bytes: 0,
   startTime: null,
   sendLatencyAccum: 0,
-  sendSamples: 0
+  sendSamples: 0,
 };
 
-connectBtn.addEventListener('click', () => {
+connectBtn.addEventListener("click", () => {
   if (!socket.connected) {
-    appendLog('Socket disconnected. Retrying connect.');
+    appendLog("Socket disconnected. Retrying connect.");
     socket.connect();
   }
   const room = roomInput.value.trim();
   if (!room) {
-    appendLog('Room name is required.');
+    appendLog("Room name is required.");
     return;
   }
-  socket.emit('createOrJoin', room);
-  updateStatus('joining');
+  socket.emit("createOrJoin", room);
+  updateStatus("joining");
   connectBtn.disabled = true;
 });
 
-startBtn.addEventListener('click', () => {
-  if (!dataChannel || dataChannel.readyState !== 'open') {
-    appendLog('DataChannel not ready. Wait for connection.');
+startBtn.addEventListener("click", () => {
+  if (!dataChannel || dataChannel.readyState !== "open") {
+    appendLog("DataChannel not ready. Wait for connection.");
     return;
   }
   if (!streaming) {
@@ -59,61 +59,61 @@ startBtn.addEventListener('click', () => {
   }
 });
 
-stopBtn.addEventListener('click', stopStreaming);
+stopBtn.addEventListener("click", stopStreaming);
 
-socket.on('connect', () => {
-  appendLog('Connected to signaling server.');
+socket.on("connect", () => {
+  appendLog("Connected to signaling server.");
 });
 
-socket.on('disconnect', (reason) => {
+socket.on("disconnect", (reason) => {
   appendLog(`Socket disconnected: ${reason}`);
   teardownPeerConnection();
   connectBtn.disabled = false;
-  updateStatus('disconnected');
+  updateStatus("disconnected");
 });
 
-socket.on('created', (room, clientId) => {
+socket.on("created", (room, clientId) => {
   appendLog(`Created room ${room} as initiator (${clientId}).`);
   isInitiator = true;
   ensurePeerConnection();
 });
 
-socket.on('joined', (room, clientId) => {
+socket.on("joined", (room, clientId) => {
   appendLog(`Joined room ${room} (${clientId}). Awaiting offer.`);
   isInitiator = false;
   ensurePeerConnection();
 });
 
-socket.on('ready', () => {
-  appendLog('Peer ready, starting negotiation.');
+socket.on("ready", () => {
+  appendLog("Peer ready, starting negotiation.");
   if (isInitiator) {
     void createOffer();
   }
 });
 
-socket.on('full', (room) => {
+socket.on("full", (room) => {
   appendLog(`Room ${room} is full. Choose a different room name.`);
-  updateStatus('full');
+  updateStatus("full");
   connectBtn.disabled = false;
 });
 
-socket.on('error', (message) => {
+socket.on("error", (message) => {
   appendLog(`Server error: ${message}`);
   connectBtn.disabled = false;
 });
 
-socket.on('peerDisconnected', () => {
-  appendLog('Peer disconnected.');
+socket.on("peerDisconnected", () => {
+  appendLog("Peer disconnected.");
   resetMetrics();
   stopStreaming();
   teardownPeerConnection();
-  updateStatus('peer-disconnected');
+  updateStatus("peer-disconnected");
   connectBtn.disabled = false;
 });
 
-socket.on('signal', async (payload) => {
+socket.on("signal", async (payload) => {
   if (!peerConnection) {
-    appendLog('Received signal before peer connection existed. Creating now.');
+    appendLog("Received signal before peer connection existed. Creating now.");
     ensurePeerConnection();
   }
 
@@ -121,10 +121,10 @@ socket.on('signal', async (payload) => {
     const description = payload.description;
     appendLog(`Received remote description (${description.type}).`);
     await peerConnection.setRemoteDescription(description);
-    if (description.type === 'offer') {
+    if (description.type === "offer") {
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
-      socket.emit('signal', { description: peerConnection.localDescription });
+      socket.emit("signal", { description: peerConnection.localDescription });
     }
   } else if (payload.candidate) {
     try {
@@ -143,24 +143,28 @@ function ensurePeerConnection() {
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      socket.emit('signal', { candidate: event.candidate });
+      socket.emit("signal", { candidate: event.candidate });
     }
   };
 
   peerConnection.onconnectionstatechange = () => {
     appendLog(`Connection state: ${peerConnection.connectionState}`);
-    if (peerConnection.connectionState === 'connected') {
-      updateStatus('connected');
+    if (peerConnection.connectionState === "connected") {
+      updateStatus("connected");
     }
-    if (['disconnected', 'failed', 'closed'].includes(peerConnection.connectionState)) {
+    if (
+      ["disconnected", "failed", "closed"].includes(
+        peerConnection.connectionState
+      )
+    ) {
       stopStreaming();
       updateStatus(peerConnection.connectionState);
     }
   };
 
   if (isInitiator) {
-    dataChannel = peerConnection.createDataChannel('frame-channel', {
-      ordered: true
+    dataChannel = peerConnection.createDataChannel("frame-channel", {
+      ordered: true,
     });
     configureDataChannel(dataChannel);
   } else {
@@ -172,16 +176,16 @@ function ensurePeerConnection() {
 }
 
 function configureDataChannel(channel) {
-  channel.binaryType = 'arraybuffer';
+  channel.binaryType = "arraybuffer";
   channel.bufferedAmountLowThreshold = Number(chunkInput.value) * 4;
 
   channel.onopen = () => {
-    appendLog('DataChannel open.');
+    appendLog("DataChannel open.");
     startBtn.disabled = false;
   };
 
   channel.onclose = () => {
-    appendLog('DataChannel closed.');
+    appendLog("DataChannel closed.");
     startBtn.disabled = true;
     stopBtn.disabled = true;
     stopStreaming();
@@ -202,7 +206,7 @@ async function createOffer() {
   }
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
-  socket.emit('signal', { description: peerConnection.localDescription });
+  socket.emit("signal", { description: peerConnection.localDescription });
 }
 
 function teardownPeerConnection() {
@@ -216,7 +220,7 @@ function teardownPeerConnection() {
 }
 
 function startStreaming() {
-  if (!dataChannel || dataChannel.readyState !== 'open' || streaming) {
+  if (!dataChannel || dataChannel.readyState !== "open" || streaming) {
     return;
   }
   streaming = true;
@@ -224,13 +228,15 @@ function startStreaming() {
   stopBtn.disabled = false;
   resetMetrics();
   streamAbortController = new AbortController();
-  streamLoopPromise = runStreamLoop(streamAbortController.signal).catch((err) => {
-    appendLog(`Stream loop error: ${err.message}`);
-  }).finally(() => {
-    streaming = false;
-    stopBtn.disabled = true;
-    startBtn.disabled = !dataChannel || dataChannel.readyState !== 'open';
-  });
+  streamLoopPromise = runStreamLoop(streamAbortController.signal)
+    .catch((err) => {
+      appendLog(`Stream loop error: ${err.message}`);
+    })
+    .finally(() => {
+      streaming = false;
+      stopBtn.disabled = true;
+      startBtn.disabled = !dataChannel || dataChannel.readyState !== "open";
+    });
 }
 
 function stopStreaming() {
@@ -293,17 +299,17 @@ class FrameSender {
 
   async send(buffer, { timestamp }) {
     if (!this.channel) {
-      throw new Error('DataChannel missing');
+      throw new Error("DataChannel missing");
     }
     const frameId = frameSequence++;
     const totalChunks = Math.ceil(buffer.byteLength / this.chunkSize) || 1;
 
     const metadata = {
-      type: 'frame-metadata',
+      type: "frame-metadata",
       frameId,
       totalChunks,
       byteLength: buffer.byteLength,
-      timestamp: timestamp ?? Date.now()
+      timestamp: timestamp ?? Date.now(),
     };
     this.channel.send(JSON.stringify(metadata));
 
@@ -322,7 +328,7 @@ class FrameSender {
 
       updateBufferedAmount();
       if (this.channel.bufferedAmount > this.maxBufferedAmount) {
-        await waitForEvent(this.channel, 'bufferedamountlow');
+        await waitForEvent(this.channel, "bufferedamountlow");
       }
     }
   }
@@ -341,7 +347,10 @@ class TestFrameGenerator {
     if (window.crypto && window.crypto.getRandomValues) {
       const maxElements = Math.floor(65536 / BYTES_PER_PIXEL);
       for (let offset = 0; offset < view.length; offset += maxElements) {
-        const slice = view.subarray(offset, Math.min(offset + maxElements, view.length));
+        const slice = view.subarray(
+          offset,
+          Math.min(offset + maxElements, view.length)
+        );
         window.crypto.getRandomValues(slice);
       }
     } else {
@@ -351,7 +360,7 @@ class TestFrameGenerator {
     }
     return {
       buffer,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
   }
 }
@@ -367,16 +376,24 @@ function resetMetrics() {
 
 function updateMetrics() {
   framesSentEl.textContent = metrics.frames.toString();
-  const elapsed = metrics.startTime ? (performance.now() - metrics.startTime) / 1000 : 0;
-  const throughput = elapsed > 0 ? (metrics.bytes * 8) / (elapsed * 1_000_000) : 0;
+  const elapsed = metrics.startTime
+    ? (performance.now() - metrics.startTime) / 1000
+    : 0;
+  const throughput =
+    elapsed > 0 ? (metrics.bytes * 8) / (elapsed * 1_000_000) : 0;
   throughputEl.textContent = throughput.toFixed(2);
-  const latency = metrics.sendSamples > 0 ? metrics.sendLatencyAccum / metrics.sendSamples : 0;
+  const latency =
+    metrics.sendSamples > 0
+      ? metrics.sendLatencyAccum / metrics.sendSamples
+      : 0;
   sendLatencyEl.textContent = latency.toFixed(2);
   updateBufferedAmount();
 }
 
 function updateBufferedAmount() {
-  bufferedAmountEl.textContent = dataChannel ? dataChannel.bufferedAmount.toString() : '0';
+  bufferedAmountEl.textContent = dataChannel
+    ? dataChannel.bufferedAmount.toString()
+    : "0";
 }
 
 function appendLog(message) {
@@ -409,21 +426,21 @@ function delay(ms, abortSignal) {
 
     const cleanup = () => {
       clearTimeout(id);
-      abortSignal?.removeEventListener('abort', onAbort);
+      abortSignal?.removeEventListener("abort", onAbort);
     };
 
     const onAbort = () => {
       cleanup();
-      reject(new DOMException('Aborted', 'AbortError'));
+      reject(new DOMException("Aborted", "AbortError"));
     };
 
     if (abortSignal) {
       if (abortSignal.aborted) {
         cleanup();
-        reject(new DOMException('Aborted', 'AbortError'));
+        reject(new DOMException("Aborted", "AbortError"));
         return;
       }
-      abortSignal.addEventListener('abort', onAbort, { once: true });
+      abortSignal.addEventListener("abort", onAbort, { once: true });
     }
   });
 }
