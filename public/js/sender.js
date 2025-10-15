@@ -14,6 +14,9 @@ const chunkInput = document.querySelector("#chunkInput");
 const framesSentEl = document.querySelector("#framesSent");
 const throughputEl = document.querySelector("#throughput");
 const sendLatencyEl = document.querySelector("#sendLatency");
+const frameGenTimeEl = document.querySelector("#frameGenTime");
+const backpressureWaitEl = document.querySelector("#backpressureWait");
+const backpressureEventsEl = document.querySelector("#backpressureEvents");
 const bufferedAmountEl = document.querySelector("#bufferedAmount");
 
 const socket = io({ transports: ["websocket"] });
@@ -32,6 +35,10 @@ const metrics = {
   startTime: null,
   sendLatencyAccum: 0,
   sendSamples: 0,
+  frameGenAccum: 0,
+  frameGenSamples: 0,
+  backpressureTimeAccum: 0,
+  backpressureEventsAccum: 0,
 };
 
 connectBtn.addEventListener("click", () => {
@@ -177,7 +184,12 @@ function ensurePeerConnection() {
 
 function configureDataChannel(channel) {
   channel.binaryType = "arraybuffer";
-  channel.bufferedAmountLowThreshold = Number(chunkInput.value) * 4;
+  const chunkSize = Number(chunkInput.value) || 65536;
+  const maxBufferedChunks = 64;
+  const lowWatermarkFactor = 0.5;
+  channel.bufferedAmountLowThreshold = Math.floor(
+    chunkSize * maxBufferedChunks * lowWatermarkFactor
+  );
 
   channel.onopen = () => {
     appendLog("DataChannel open.");
@@ -258,12 +270,17 @@ async function runStreamLoop(abortSignal) {
     frameSender.setChunkSize(Number(chunkInput.value) || frameSender.chunkSize);
 
     const loopStart = performance.now();
+    const genStart = performance.now();
     const { buffer, timestamp } = generator.next();
-    const sendStart = performance.now();
-    await frameSender.send(buffer, { timestamp });
-    const sendLatency = performance.now() - sendStart;
-    metrics.sendLatencyAccum += sendLatency;
+    const frameGenTime = performance.now() - genStart;
+    const { totalSendTime, backpressureTime, backpressureEvents } =
+      await frameSender.send(buffer, { timestamp });
+    metrics.sendLatencyAccum += totalSendTime;
     metrics.sendSamples += 1;
+    metrics.frameGenAccum += frameGenTime;
+    metrics.frameGenSamples += 1;
+    metrics.backpressureTimeAccum += backpressureTime;
+    metrics.backpressureEventsAccum += backpressureEvents;
 
     metrics.frames += 1;
     metrics.bytes += buffer.byteLength;
@@ -283,7 +300,15 @@ class FrameSender {
   constructor(channel) {
     this.channel = channel;
     this.chunkSize = 65536;
-    this.maxBufferedAmount = this.chunkSize * 8;
+    this.maxBufferedChunks = 64; // allow ~4 MB outstanding when chunk=64 KB
+    this.lowWatermarkFactor = 0.5;
+    this.maxBufferedAmount = this.chunkSize * this.maxBufferedChunks;
+    this.lowWatermark = Math.floor(
+      this.maxBufferedAmount * this.lowWatermarkFactor
+    );
+    if (this.channel) {
+      this.channel.bufferedAmountLowThreshold = this.lowWatermark;
+    }
   }
 
   setChunkSize(size) {
@@ -291,9 +316,12 @@ class FrameSender {
       return;
     }
     this.chunkSize = size;
-    this.maxBufferedAmount = this.chunkSize * 8;
+    this.maxBufferedAmount = this.chunkSize * this.maxBufferedChunks;
+    this.lowWatermark = Math.floor(
+      this.maxBufferedAmount * this.lowWatermarkFactor
+    );
     if (this.channel) {
-      this.channel.bufferedAmountLowThreshold = this.chunkSize * 4;
+      this.channel.bufferedAmountLowThreshold = this.lowWatermark;
     }
   }
 
@@ -303,6 +331,9 @@ class FrameSender {
     }
     const frameId = frameSequence++;
     const totalChunks = Math.ceil(buffer.byteLength / this.chunkSize) || 1;
+    const sendStart = performance.now();
+    let backpressureTime = 0;
+    let backpressureEvents = 0;
 
     const metadata = {
       type: "frame-metadata",
@@ -328,9 +359,19 @@ class FrameSender {
 
       updateBufferedAmount();
       if (this.channel.bufferedAmount > this.maxBufferedAmount) {
+        const waitStart = performance.now();
         await waitForEvent(this.channel, "bufferedamountlow");
+        backpressureTime += performance.now() - waitStart;
+        backpressureEvents += 1;
       }
     }
+
+    return {
+      totalSendTime: performance.now() - sendStart,
+      backpressureTime,
+      backpressureEvents,
+      totalChunks,
+    };
   }
 }
 
@@ -371,6 +412,10 @@ function resetMetrics() {
   metrics.startTime = null;
   metrics.sendLatencyAccum = 0;
   metrics.sendSamples = 0;
+  metrics.frameGenAccum = 0;
+  metrics.frameGenSamples = 0;
+  metrics.backpressureTimeAccum = 0;
+  metrics.backpressureEventsAccum = 0;
   updateMetrics();
 }
 
@@ -387,6 +432,17 @@ function updateMetrics() {
       ? metrics.sendLatencyAccum / metrics.sendSamples
       : 0;
   sendLatencyEl.textContent = latency.toFixed(2);
+  const frameGen =
+    metrics.frameGenSamples > 0
+      ? metrics.frameGenAccum / metrics.frameGenSamples
+      : 0;
+  frameGenTimeEl.textContent = frameGen.toFixed(2);
+  const backpressureTime =
+    metrics.frames > 0 ? metrics.backpressureTimeAccum / metrics.frames : 0;
+  backpressureWaitEl.textContent = backpressureTime.toFixed(2);
+  const backpressureEvents =
+    metrics.frames > 0 ? metrics.backpressureEventsAccum / metrics.frames : 0;
+  backpressureEventsEl.textContent = backpressureEvents.toFixed(2);
   updateBufferedAmount();
 }
 
