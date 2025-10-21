@@ -129,10 +129,10 @@ socket.on("connect", () => {
 });
 
 socket.on("disconnect", (reason) => {
-  appendLog(`Socket disconnected: ${reason}`);
-  teardownPeerConnection();
+  appendLog(`Signaling disconnected: ${reason} (keeping P2P alive)`);
+  // Keep the existing P2P session; only signaling went away.
   connectBtn.disabled = false;
-  updateStatus("disconnected");
+  updateStatus("signaling-disconnected");
 });
 
 socket.on("created", (room, clientId) => {

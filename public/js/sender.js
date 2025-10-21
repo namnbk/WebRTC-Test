@@ -80,10 +80,10 @@ socket.on("connect", () => {
 });
 
 socket.on("disconnect", (reason) => {
-  appendLog(`Socket disconnected: ${reason}`);
-  teardownPeerConnection();
+  appendLog(`Signaling disconnected: ${reason} (keeping P2P alive)`);
+  // Do NOT tear down the RTCPeerConnection; existing P2P session can continue.
   connectBtn.disabled = false;
-  updateStatus("disconnected");
+  updateStatus("signaling-disconnected");
 });
 
 socket.on("created", (room, clientId) => {
@@ -253,7 +253,11 @@ function startStreaming() {
   streamAbortController = new AbortController();
   streamLoopPromise = runStreamLoop(streamAbortController.signal)
     .catch((err) => {
-      appendLog(`Stream loop error: ${err.message}`);
+      if (err && err.name === "AbortError") {
+        appendLog("Streaming stopped");
+      } else {
+        appendLog(`Stream loop error: ${err?.message || err}`);
+      }
     })
     .finally(() => {
       streaming = false;
