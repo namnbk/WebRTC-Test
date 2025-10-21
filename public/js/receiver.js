@@ -1,4 +1,12 @@
-const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+const ICE_SERVERS = [
+  // Multiple STUN servers increase chance of srflx success
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
+  { urls: "stun:stun4.l.google.com:19302" },
+];
+
 const FRAME_WIDTH = 512;
 const FRAME_HEIGHT = 512;
 
@@ -195,7 +203,11 @@ function ensurePeerConnection() {
     return;
   }
 
-  peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  peerConnection = new RTCPeerConnection({
+    iceServers: ICE_SERVERS,
+    iceTransportPolicy: "all", // Try all connection types
+    iceCandidatePoolSize: 10, // Generate more candidates
+  });
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
