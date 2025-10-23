@@ -11,13 +11,49 @@ const roomInput = document.querySelector("#roomInput");
 const statusEl = document.querySelector("#status");
 const connectBtn = document.querySelector("#connectBtn");
 const localVideo = document.querySelector("#localVideo");
+const resolutionSelect = document.querySelector("#resolutionSelect");
+const frameRateSelect = document.querySelector("#frameRateSelect");
+
+const RESOLUTION_PRESETS = {
+  p180: { width: 320, height: 180, label: "320x180 (p180)" },
+  qvga: { width: 320, height: 240, label: "320x240 (QVGA)" },
+  p360: { width: 640, height: 360, label: "640x360 (p360)" },
+  vga: { width: 640, height: 480, label: "640x480 (VGA)" },
+  hd: { width: 1280, height: 720, label: "1280x720 (HD)" },
+  fullHd: { width: 1920, height: 1080, label: "1920x1080 (Full HD)" },
+  televisionFourK: { width: 3840, height: 2160, label: "3840x2160 (4K UHD)" },
+  cinemaFourK: { width: 4096, height: 2160, label: "4096x2160 (Cinema 4K)" },
+  eightK: { width: 7680, height: 4320, label: "7680x4320 (8K)" },
+};
+
+const DEFAULT_RESOLUTION_KEY = "hd";
+
+if (resolutionSelect && !(resolutionSelect.value in RESOLUTION_PRESETS)) {
+  resolutionSelect.value = DEFAULT_RESOLUTION_KEY;
+}
 
 const socket = io({ transports: ["websocket"] });
 
 let peerConnection = null;
 let isInitiator = false;
 let localStream = null;
-let localTracksAdded = false;
+
+if (resolutionSelect) {
+  resolutionSelect.addEventListener("change", () => {
+    const key = getSelectedResolutionKey();
+    const preset = getPresetDetails(key);
+    appendLog(`Switching camera request to ${preset.label}.`);
+    void startLocalMedia({ forceRestart: true });
+  });
+}
+
+if (frameRateSelect) {
+  frameRateSelect.addEventListener("change", () => {
+    const fps = getSelectedFrameRate();
+    appendLog(`Switching camera frame rate to ${fps} fps.`);
+    void startLocalMedia({ forceRestart: true });
+  });
+}
 
 connectBtn.addEventListener("click", async () => {
   if (!socket.connected) {
@@ -46,18 +82,18 @@ socket.on("disconnect", (reason) => {
   updateStatus("signaling-disconnected");
 });
 
-socket.on("created", (room, clientId) => {
+socket.on("created", async (room, clientId) => {
   appendLog(`Created room ${room} as initiator (${clientId}).`);
   isInitiator = true;
   ensurePeerConnection();
-  attachLocalTracks();
+  await attachLocalTracks();
 });
 
-socket.on("joined", (room, clientId) => {
+socket.on("joined", async (room, clientId) => {
   appendLog(`Joined room ${room} (${clientId}). Waiting for offer.`);
   isInitiator = false;
   ensurePeerConnection();
-  attachLocalTracks();
+  await attachLocalTracks();
 });
 
 socket.on("ready", () => {
@@ -96,7 +132,7 @@ socket.on("signal", async (payload) => {
     appendLog(`Received remote description (${description.type}).`);
     await peerConnection.setRemoteDescription(description);
     if (description.type === "offer") {
-      attachLocalTracks();
+      await attachLocalTracks();
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       socket.emit("signal", { description: peerConnection.localDescription });
@@ -141,8 +177,8 @@ function ensurePeerConnection() {
   };
 }
 
-async function startLocalMedia() {
-  if (localStream) return;
+async function startLocalMedia({ forceRestart = false } = {}) {
+  if (localStream && !forceRestart) return;
   // getUserMedia requires a secure context (HTTPS) except on localhost.
   const isLocalhost = ["localhost", "127.0.0.1", "::1"].includes(
     location.hostname
@@ -163,10 +199,26 @@ async function startLocalMedia() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new TypeError("navigator.mediaDevices.getUserMedia is unavailable in this context");
     }
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const resolutionKey = getSelectedResolutionKey();
+    const preset = getPresetDetails(resolutionKey);
+    const frameRate = getSelectedFrameRate();
+    const constraints = buildConstraintsForPreset(preset, frameRate);
+    appendLog(
+      `Requesting camera at ${preset.width}x${preset.height} @ ${frameRate} fps.`
+    );
+
+    const previousStream = forceRestart ? localStream : null;
+    const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+    localStream = newStream;
     localVideo.srcObject = localStream;
-    appendLog("Local camera stream started.");
-    attachLocalTracks();
+    appendLog(`Local camera stream started (${preset.label}, ${frameRate} fps).`);
+    await attachLocalTracks();
+
+    if (previousStream && previousStream !== newStream) {
+      stopStream(previousStream);
+      appendLog("Previous camera stream stopped.");
+    }
   } catch (err) {
     const name = err?.name || "Error";
     const message = err?.message || String(err);
@@ -175,23 +227,80 @@ async function startLocalMedia() {
       appendLog(
         "Likely cause: page not served over HTTPS (or not localhost)."
       );
+    } else if (name === "OverconstrainedError") {
+      const attempted = getPresetDetails(getSelectedResolutionKey());
+      const fps = getSelectedFrameRate();
+      appendLog(
+        `Selected resolution ${attempted.width}x${attempted.height} @ ${fps} fps is not supported by this camera.`
+      );
+    }
+    if (forceRestart && localStream) {
+      appendLog("Keeping previous camera stream active.");
     }
   }
 }
 
-function attachLocalTracks() {
-  if (!peerConnection || !localStream || localTracksAdded) return;
-  for (const track of localStream.getTracks()) {
-    peerConnection.addTrack(track, localStream);
+async function attachLocalTracks() {
+  if (!peerConnection || !localStream) {
+    return false;
   }
-  localTracksAdded = true;
-  appendLog("Local tracks attached to RTCPeerConnection.");
+
+  const peerSenders = (peerConnection.getSenders && peerConnection.getSenders()) || [];
+  const senderByKind = new Map();
+  for (const sender of peerSenders) {
+    if (sender.track) {
+      senderByKind.set(sender.track.kind, sender);
+    }
+  }
+
+  let updates = 0;
+  const activeKinds = new Set();
+
+  for (const track of localStream.getTracks()) {
+    activeKinds.add(track.kind);
+    const existingSender = senderByKind.get(track.kind);
+    if (existingSender) {
+      if (existingSender.track === track) {
+        continue;
+      }
+      try {
+        await existingSender.replaceTrack(track);
+        appendLog(`Replaced ${track.kind} track with new stream.`);
+        updates += 1;
+      } catch (err) {
+        appendLog(`replaceTrack failed for ${track.kind}: ${err?.message || err}`);
+      }
+    } else {
+      peerConnection.addTrack(track, localStream);
+      appendLog(`Added ${track.kind} track to RTCPeerConnection.`);
+      updates += 1;
+    }
+  }
+
+  for (const sender of peerSenders) {
+    const kind = sender.track?.kind;
+    if (kind && !activeKinds.has(kind)) {
+      try {
+        peerConnection.removeTrack(sender);
+        appendLog(`Removed ${kind} track from RTCPeerConnection.`);
+        updates += 1;
+      } catch (err) {
+        appendLog(`removeTrack failed for ${kind}: ${err?.message || err}`);
+      }
+    }
+  }
+
+  if (updates > 0) {
+    appendLog("Local tracks synchronized with RTCPeerConnection.");
+  }
+
+  return updates > 0;
 }
 
 async function createOffer() {
   if (!peerConnection) return;
   // Ensure local tracks are present in the initial offer
-  attachLocalTracks();
+  await attachLocalTracks();
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
   socket.emit("signal", { description: peerConnection.localDescription });
@@ -205,7 +314,49 @@ function teardownPeerConnection() {
     peerConnection.close();
     peerConnection = null;
   }
-  localTracksAdded = false;
+}
+
+function getSelectedResolutionKey() {
+  const key = resolutionSelect?.value || DEFAULT_RESOLUTION_KEY;
+  if (key in RESOLUTION_PRESETS) {
+    return key;
+  }
+  return DEFAULT_RESOLUTION_KEY;
+}
+
+function getPresetDetails(key) {
+  return RESOLUTION_PRESETS[key] || RESOLUTION_PRESETS[DEFAULT_RESOLUTION_KEY];
+}
+
+function getSelectedFrameRate() {
+  const value = Number(frameRateSelect?.value || "30");
+  if (Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return 30;
+}
+
+function buildConstraintsForPreset(preset, frameRate) {
+  return {
+    video: {
+      width: { exact: preset.width },
+      height: { exact: preset.height },
+      frameRate: { ideal: frameRate, max: frameRate },
+    },
+    audio: false,
+  };
+}
+
+function stopStream(stream) {
+  if (!stream) return;
+  try {
+    const tracks = stream.getTracks?.() || [];
+    for (const track of tracks) {
+      track.stop();
+    }
+  } catch (err) {
+    appendLog(`Failed to stop previous stream: ${err?.message || err}`);
+  }
 }
 
 function appendLog(message) {

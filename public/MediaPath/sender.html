@@ -33,6 +33,27 @@
 
     <fieldset>
       <legend>Local Camera</legend>
+      <label>
+        Video resolution
+        <select id="resolutionSelect">
+          <option value="p180">320x180 (p180)</option>
+          <option value="qvga">320x240 (QVGA)</option>
+          <option value="p360">640x360 (p360)</option>
+          <option value="vga">640x480 (VGA)</option>
+          <option value="hd" selected>1280x720 (HD)</option>
+          <option value="fullHd">1920x1080 (Full HD)</option>
+          <option value="televisionFourK">3840x2160 (4K UHD)</option>
+          <option value="cinemaFourK">4096x2160 (Cinema 4K)</option>
+          <option value="eightK">7680x4320 (8K)</option>
+        </select>
+      </label>
+      <label>
+        Frame rate
+        <select id="frameRateSelect">
+          <option value="30" selected>30 fps</option>
+          <option value="45">45 fps</option>
+        </select>
+      </label>
       <video id="localVideo" playsinline autoplay muted></video>
     </fieldset>
 
@@ -47,4 +68,3 @@
   
 </body>
 </html>
-
