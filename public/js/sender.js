@@ -303,6 +303,12 @@ async function runStreamLoop(abortSignal) {
 
     const elapsed = performance.now() - loopStart;
     const waitMs = Math.max(0, intervalMs - elapsed);
+    appendLog(
+      "Elapsed Time for generating and sending frames (ms): " +
+        elapsed.toFixed(2) +
+        " ms"
+    );
+    appendLog("Waiting " + waitMs.toFixed(2) + " ms for next frame");
     if (waitMs > 0) {
       await delay(waitMs, abortSignal);
     } else {
